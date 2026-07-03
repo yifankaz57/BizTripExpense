@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import * as XLSX from "xlsx";
-import { supabase } from "./lib/supabaseClient";
+import * as db from "./lib/db";
 import { Plus, Trash2, Download, Printer, Send, RefreshCw, Plane, ListChecks, History, MapPin, ClipboardList, AlertCircle, ShieldCheck, CheckCircle2, XCircle, Clock3, ChevronDown, ChevronUp, Users, Upload, Copy, FileSpreadsheet } from "lucide-react";
 
 /* ============================================================
@@ -76,26 +76,6 @@ function currentRule(history, category, asOf) {
   return rows.reduce((a, b) => (b.effectiveDate > a.effectiveDate ? b : a));
 }
 
-/* ---------- ストレージ ---------- */
-async function loadShared(key, fallback) {
-  try {
-    const { data, error } = await supabase.from("kv_store").select("value").eq("key", key).maybeSingle();
-    if (error) { console.error("supabase load failed", error); return fallback; }
-    return data ? data.value : fallback;
-  } catch (e) {
-    console.error("supabase load failed", e);
-    return fallback;
-  }
-}
-async function saveShared(key, value) {
-  try {
-    const { error } = await supabase.from("kv_store").upsert({ key, value, updated_at: new Date().toISOString() });
-    if (error) console.error("supabase save failed", error);
-  } catch (e) {
-    console.error("supabase save failed", e);
-  }
-}
-
 const TABS = [
   { id: "form", label: "精算書作成", icon: Plane },
   { id: "rates", label: "現行レート一覧", icon: ListChecks },
@@ -110,43 +90,109 @@ const TABS = [
 export default function App() {
   const [tab, setTab] = useState("form");
   const [loading, setLoading] = useState(true);
-  const [destinations, setDestinations] = useState(SEED_DESTINATIONS);
-  const [transportHistory, setTransportHistory] = useState(SEED_TRANSPORT_HISTORY);
-  const [ruleHistory, setRuleHistory] = useState(SEED_RULE_HISTORY);
-  const [employees, setEmployees] = useState(SEED_EMPLOYEES);
+  const [destinations, setDestinations] = useState([]);
+  const [transportHistory, setTransportHistory] = useState([]);
+  const [ruleHistory, setRuleHistory] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [reports, setReports] = useState([]);
   const [toast, setToast] = useState("");
   const [duplicateSource, setDuplicateSource] = useState(null);
   const [template, setTemplate] = useState(null);
 
+  const flash = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
+
   useEffect(() => {
     (async () => {
-      const [d, t, r, e, rp, tpl] = await Promise.all([
-        loadShared("dest_master", null),
-        loadShared("transport_history", null),
-        loadShared("rule_history", null),
-        loadShared("employee_master", null),
-        loadShared("expense_reports", []),
-        loadShared("report_template", null),
-      ]);
-      if (d) setDestinations(d); else await saveShared("dest_master", SEED_DESTINATIONS);
-      if (t) setTransportHistory(t); else await saveShared("transport_history", SEED_TRANSPORT_HISTORY);
-      if (r) setRuleHistory(r); else await saveShared("rule_history", SEED_RULE_HISTORY);
-      if (e) setEmployees(e); else await saveShared("employee_master", SEED_EMPLOYEES);
-      setReports(rp || []);
-      setTemplate(tpl || null);
-      setLoading(false);
+      try {
+        const [d, t, r, e, rp, tpl] = await Promise.all([
+          db.listDestinations(),
+          db.listTransportFares(),
+          db.listTravelRules(),
+          db.listEmployees(),
+          db.listReports(),
+          db.getTemplate(),
+        ]);
+        setDestinations(d.length ? d : await db.insertDestinationsBulk(SEED_DESTINATIONS));
+        setTransportHistory(t.length ? t : await db.insertTransportFaresBulk(SEED_TRANSPORT_HISTORY));
+        setRuleHistory(r.length ? r : await db.insertTravelRulesBulk(SEED_RULE_HISTORY));
+        setEmployees(e.length ? e : await db.insertEmployeesBulk(SEED_EMPLOYEES));
+        setReports(rp);
+        setTemplate(tpl);
+      } catch (err) {
+        console.error(err);
+        flash(`データの読み込みに失敗しました：${err.message || err}`);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
-  const flash = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
+  const addDestination = async (row) => {
+    const inserted = await db.insertDestination(row);
+    setDestinations((prev) => [...prev, inserted]);
+  };
 
-  const persistDest = async (next) => { setDestinations(next); await saveShared("dest_master", next); };
-  const persistTransport = async (next) => { setTransportHistory(next); await saveShared("transport_history", next); };
-  const persistRules = async (next) => { setRuleHistory(next); await saveShared("rule_history", next); };
-  const persistEmployees = async (next) => { setEmployees(next); await saveShared("employee_master", next); };
-  const persistReports = async (next) => { setReports(next); await saveShared("expense_reports", next); };
-  const persistTemplate = async (next) => { setTemplate(next); await saveShared("report_template", next); };
+  const addTransportFare = async (row) => {
+    const inserted = await db.insertTransportFare(row);
+    setTransportHistory((prev) => [...prev, inserted]);
+  };
+  const updateTransportFareRow = async (id, patch) => {
+    await db.updateTransportFare(id, patch);
+    setTransportHistory((prev) => prev.map((h) => (h.id === id ? { ...h, ...patch } : h)));
+  };
+  const deleteTransportFareRow = async (id) => {
+    await db.deleteTransportFare(id);
+    setTransportHistory((prev) => prev.filter((h) => h.id !== id));
+  };
+
+  const addTravelRule = async (row) => {
+    const inserted = await db.insertTravelRule(row);
+    setRuleHistory((prev) => [...prev, inserted]);
+  };
+  const updateTravelRuleRow = async (id, patch) => {
+    await db.updateTravelRule(id, patch);
+    setRuleHistory((prev) => prev.map((h) => (h.id === id ? { ...h, ...patch } : h)));
+  };
+  const deleteTravelRuleRow = async (id) => {
+    await db.deleteTravelRule(id);
+    setRuleHistory((prev) => prev.filter((h) => h.id !== id));
+  };
+
+  const addEmployee = async (row) => {
+    const inserted = await db.insertEmployee(row);
+    setEmployees((prev) => [...prev, inserted]);
+  };
+  const addEmployeesBulk = async (rows) => {
+    const inserted = await db.insertEmployeesBulk(rows);
+    setEmployees((prev) => [...prev, ...inserted]);
+  };
+  const updateEmployeeRow = async (id, patch) => {
+    await db.updateEmployee(id, patch);
+    setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+  };
+  const deleteEmployeeRow = async (id) => {
+    await db.deleteEmployee(id);
+    setEmployees((prev) => prev.filter((e) => e.id !== id));
+  };
+
+  const addReport = async (report) => {
+    const inserted = await db.insertReport(report);
+    setReports((prev) => [inserted, ...prev]);
+    return inserted;
+  };
+  const updateReportRow = async (id, patch) => {
+    await db.updateReportStatus(id, patch);
+    setReports((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  };
+  const deleteReportRow = async (id) => {
+    await db.deleteReport(id);
+    setReports((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const changeTemplate = async (next) => {
+    if (next) { await db.upsertTemplate(next); setTemplate(next); }
+    else { await db.deleteTemplate(); setTemplate(null); }
+  };
 
   if (loading) {
     return (
@@ -195,7 +241,7 @@ export default function App() {
             duplicateSource={duplicateSource}
             onDuplicateConsumed={() => setDuplicateSource(null)}
             onSubmitApplication={async (report) => {
-              await persistReports([report, ...reports]);
+              await addReport(report);
               flash(report.status === "approved" ? "申請を送信し、自動承認されました。" : "申請を送信しました。管理者の承認をお待ちください。");
               setTab("reports");
             }}
@@ -205,23 +251,37 @@ export default function App() {
           <RatesView destinations={destinations} transportHistory={transportHistory} ruleHistory={ruleHistory} />
         )}
         {tab === "employees" && (
-          <EmployeeMaster employees={employees} onChange={persistEmployees} flash={flash} />
+          <EmployeeMaster
+            employees={employees}
+            onAdd={addEmployee}
+            onAddBulk={addEmployeesBulk}
+            onUpdate={updateEmployeeRow}
+            onDelete={deleteEmployeeRow}
+            flash={flash}
+          />
         )}
         {tab === "dest" && (
-          <DestMaster destinations={destinations} onChange={persistDest} flash={flash} />
+          <DestMaster destinations={destinations} onAdd={addDestination} flash={flash} />
         )}
         {tab === "transport" && (
-          <TransportHistoryView destinations={destinations} history={transportHistory} onChange={persistTransport} flash={flash} />
+          <TransportHistoryView
+            destinations={destinations}
+            history={transportHistory}
+            onAdd={addTransportFare}
+            onUpdate={updateTransportFareRow}
+            onDelete={deleteTransportFareRow}
+            flash={flash}
+          />
         )}
         {tab === "rules" && (
-          <RuleHistoryView history={ruleHistory} onChange={persistRules} flash={flash} />
+          <RuleHistoryView history={ruleHistory} onAdd={addTravelRule} onUpdate={updateTravelRuleRow} onDelete={deleteTravelRuleRow} flash={flash} />
         )}
         {tab === "reports" && (
           <ReportsList
             reports={reports}
             flash={flash}
             onDelete={async (id) => {
-              await persistReports(reports.filter((r) => r.id !== id));
+              await deleteReportRow(id);
               flash("削除しました");
             }}
             onDuplicate={(report) => {
@@ -236,10 +296,8 @@ export default function App() {
             reports={reports}
             flash={flash}
             template={template}
-            onTemplateChange={persistTemplate}
-            onUpdate={async (id, patch) => {
-              await persistReports(reports.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-            }}
+            onTemplateChange={changeTemplate}
+            onUpdate={updateReportRow}
           />
         )}
       </main>
@@ -595,29 +653,43 @@ function RatesView({ destinations, transportHistory, ruleHistory }) {
 }
 
 /* ================= 社員マスタ管理 ================= */
-function EmployeeMaster({ employees, onChange, flash }) {
+function EmployeeMaster({ employees, onAdd, onAddBulk, onUpdate, onDelete, flash }) {
   const [form, setForm] = useState({ name: "", role: "一般", isAdmin: false });
   const [bulkText, setBulkText] = useState("");
   const [showBulk, setShowBulk] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.name.trim()) { flash("氏名を入力してください"); return; }
     if (employees.some((e) => e.name === form.name.trim())) { flash("同姓同名の社員が既に登録されています"); return; }
-    onChange([...employees, { id: uid(), name: form.name.trim(), role: form.role, isAdmin: !!form.isAdmin }]);
-    setForm({ name: "", role: "一般", isAdmin: false });
-    flash("社員を登録しました");
+    try {
+      await onAdd({ name: form.name.trim(), role: form.role, isAdmin: !!form.isAdmin });
+      setForm({ name: "", role: "一般", isAdmin: false });
+      flash("社員を登録しました");
+    } catch (err) {
+      flash(`登録に失敗しました：${err.message || err}`);
+    }
   };
 
-  const remove = (id) => {
-    onChange(employees.filter((e) => e.id !== id));
-    flash("削除しました");
+  const remove = async (id) => {
+    try {
+      await onDelete(id);
+      flash("削除しました");
+    } catch (err) {
+      flash(`削除に失敗しました：${err.message || err}`);
+    }
   };
 
-  const toggleAdmin = (id) => {
-    onChange(employees.map((e) => (e.id === id ? { ...e, isAdmin: !e.isAdmin } : e)));
+  const toggleAdmin = async (id) => {
+    const target = employees.find((e) => e.id === id);
+    if (!target) return;
+    try {
+      await onUpdate(id, { isAdmin: !target.isAdmin });
+    } catch (err) {
+      flash(`更新に失敗しました：${err.message || err}`);
+    }
   };
 
-  const submitBulk = () => {
+  const submitBulk = async () => {
     const lines = bulkText.split("\n").map((l) => l.trim()).filter(Boolean);
     if (!lines.length) { flash("貼り付ける内容がありません"); return; }
     const existing = new Set(employees.map((e) => e.name));
@@ -629,13 +701,17 @@ function EmployeeMaster({ employees, onChange, flash }) {
       const isAdmin = ["管理者", "admin", "○", "はい", "true", "1"].includes((rawAdmin || "").toLowerCase());
       if (existing.has(rawName)) continue;
       existing.add(rawName);
-      added.push({ id: uid(), name: rawName, role, isAdmin });
+      added.push({ name: rawName, role, isAdmin });
     }
     if (!added.length) { flash("追加できる行がありませんでした（重複または空欄）"); return; }
-    onChange([...employees, ...added]);
-    setBulkText("");
-    setShowBulk(false);
-    flash(`${added.length}件の社員を一括登録しました`);
+    try {
+      await onAddBulk(added);
+      setBulkText("");
+      setShowBulk(false);
+      flash(`${added.length}件の社員を一括登録しました`);
+    } catch (err) {
+      flash(`一括登録に失敗しました：${err.message || err}`);
+    }
   };
 
   const sorted = [...employees].sort((a, b) => a.name.localeCompare(b.name, "ja"));
@@ -724,7 +800,7 @@ function EmployeeMaster({ employees, onChange, flash }) {
 }
 
 /* ================= 出張先マスタ管理 ================= */
-function DestMaster({ destinations, onChange, flash }) {
+function DestMaster({ destinations, onAdd, flash }) {
   const [form, setForm] = useState({ code: "", category: "国内", place: "", purpose: "", transportMain: "", classMain: "", transportSub: "" });
 
   const nextCode = () => {
@@ -733,13 +809,17 @@ function DestMaster({ destinations, onChange, flash }) {
     return form.category === "国内" ? (domestic.length ? Math.max(...domestic) + 1 : 1) : (overseas.length ? Math.max(...overseas) + 1 : 101);
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.place.trim()) { flash("出張先名を入力してください"); return; }
     const code = form.code ? Number(form.code) : nextCode();
     if (destinations.some((d) => d.code === code)) { flash("そのコードは既に使用されています"); return; }
-    onChange([...destinations, { ...form, code }]);
-    setForm({ code: "", category: "国内", place: "", purpose: "", transportMain: "", classMain: "", transportSub: "" });
-    flash("出張先を追加しました");
+    try {
+      await onAdd({ ...form, code });
+      setForm({ code: "", category: "国内", place: "", purpose: "", transportMain: "", classMain: "", transportSub: "" });
+      flash("出張先を追加しました");
+    } catch (err) {
+      flash(`追加に失敗しました：${err.message || err}`);
+    }
   };
 
   return (
@@ -778,17 +858,21 @@ function DestMaster({ destinations, onChange, flash }) {
 }
 
 /* ================= 交通費マスタ管理 ================= */
-function TransportHistoryView({ destinations, history, onChange, flash }) {
+function TransportHistoryView({ destinations, history, onAdd, onUpdate, onDelete, flash }) {
   const [form, setForm] = useState({ code: "", effectiveDate: todayISO(), mainFare: "", subFare: "", note: "" });
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.code || !form.mainFare) { flash("出張先と主交通費を入力してください"); return; }
-    onChange([...history, { id: uid(), code: Number(form.code), effectiveDate: form.effectiveDate, mainFare: Number(form.mainFare), subFare: form.subFare ? Number(form.subFare) : null, note: form.note }]);
-    setForm({ code: "", effectiveDate: todayISO(), mainFare: "", subFare: "", note: "" });
-    flash("交通費を追加しました");
+    try {
+      await onAdd({ code: Number(form.code), effectiveDate: form.effectiveDate, mainFare: Number(form.mainFare), subFare: form.subFare ? Number(form.subFare) : null, note: form.note });
+      setForm({ code: "", effectiveDate: todayISO(), mainFare: "", subFare: "", note: "" });
+      flash("交通費を追加しました");
+    } catch (err) {
+      flash(`追加に失敗しました：${err.message || err}`);
+    }
   };
 
   const startEdit = (h) => {
@@ -797,17 +881,25 @@ function TransportHistoryView({ destinations, history, onChange, flash }) {
     setDeletingId(null);
   };
   const cancelEdit = () => { setEditingId(null); setEditDraft(null); };
-  const saveEdit = (id) => {
+  const saveEdit = async (id) => {
     if (!editDraft.code || !editDraft.mainFare) { flash("出張先と主交通費を入力してください"); return; }
-    onChange(history.map((h) => (h.id === id ? { ...h, code: Number(editDraft.code), effectiveDate: editDraft.effectiveDate, mainFare: Number(editDraft.mainFare), subFare: editDraft.subFare ? Number(editDraft.subFare) : null, note: editDraft.note } : h)));
-    setEditingId(null);
-    setEditDraft(null);
-    flash("交通費を更新しました");
+    try {
+      await onUpdate(id, { code: Number(editDraft.code), effectiveDate: editDraft.effectiveDate, mainFare: Number(editDraft.mainFare), subFare: editDraft.subFare ? Number(editDraft.subFare) : null, note: editDraft.note });
+      setEditingId(null);
+      setEditDraft(null);
+      flash("交通費を更新しました");
+    } catch (err) {
+      flash(`更新に失敗しました：${err.message || err}`);
+    }
   };
-  const confirmDelete = (id) => {
-    onChange(history.filter((h) => h.id !== id));
-    setDeletingId(null);
-    flash("交通費を削除しました");
+  const confirmDelete = async (id) => {
+    try {
+      await onDelete(id);
+      setDeletingId(null);
+      flash("交通費を削除しました");
+    } catch (err) {
+      flash(`削除に失敗しました：${err.message || err}`);
+    }
   };
 
   const sorted = [...history].sort((a, b) => (a.code - b.code) || a.effectiveDate.localeCompare(b.effectiveDate));
@@ -901,17 +993,21 @@ function TransportHistoryView({ destinations, history, onChange, flash }) {
 }
 
 /* ================= 宿泊費・日当マスタ管理 ================= */
-function RuleHistoryView({ history, onChange, flash }) {
+function RuleHistoryView({ history, onAdd, onUpdate, onDelete, flash }) {
   const [form, setForm] = useState({ category: "国内", effectiveDate: todayISO(), lodging: "", perDiem: "", note: "" });
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.lodging || !form.perDiem) { flash("宿泊費・日当を入力してください"); return; }
-    onChange([...history, { id: uid(), category: form.category, effectiveDate: form.effectiveDate, lodging: Number(form.lodging), perDiem: Number(form.perDiem), note: form.note }]);
-    setForm({ category: "国内", effectiveDate: todayISO(), lodging: "", perDiem: "", note: "" });
-    flash("宿泊費・日当を追加しました");
+    try {
+      await onAdd({ category: form.category, effectiveDate: form.effectiveDate, lodging: Number(form.lodging), perDiem: Number(form.perDiem), note: form.note });
+      setForm({ category: "国内", effectiveDate: todayISO(), lodging: "", perDiem: "", note: "" });
+      flash("宿泊費・日当を追加しました");
+    } catch (err) {
+      flash(`追加に失敗しました：${err.message || err}`);
+    }
   };
 
   const startEdit = (h) => {
@@ -920,17 +1016,25 @@ function RuleHistoryView({ history, onChange, flash }) {
     setDeletingId(null);
   };
   const cancelEdit = () => { setEditingId(null); setEditDraft(null); };
-  const saveEdit = (id) => {
+  const saveEdit = async (id) => {
     if (!editDraft.lodging || !editDraft.perDiem) { flash("宿泊費・日当を入力してください"); return; }
-    onChange(history.map((h) => (h.id === id ? { ...h, category: editDraft.category, effectiveDate: editDraft.effectiveDate, lodging: Number(editDraft.lodging), perDiem: Number(editDraft.perDiem), note: editDraft.note } : h)));
-    setEditingId(null);
-    setEditDraft(null);
-    flash("宿泊費・日当を更新しました");
+    try {
+      await onUpdate(id, { category: editDraft.category, effectiveDate: editDraft.effectiveDate, lodging: Number(editDraft.lodging), perDiem: Number(editDraft.perDiem), note: editDraft.note });
+      setEditingId(null);
+      setEditDraft(null);
+      flash("宿泊費・日当を更新しました");
+    } catch (err) {
+      flash(`更新に失敗しました：${err.message || err}`);
+    }
   };
-  const confirmDelete = (id) => {
-    onChange(history.filter((h) => h.id !== id));
-    setDeletingId(null);
-    flash("宿泊費・日当を削除しました");
+  const confirmDelete = async (id) => {
+    try {
+      await onDelete(id);
+      setDeletingId(null);
+      flash("宿泊費・日当を削除しました");
+    } catch (err) {
+      flash(`削除に失敗しました：${err.message || err}`);
+    }
   };
 
   const sorted = [...history].sort((a, b) => a.category.localeCompare(b.category) || a.effectiveDate.localeCompare(b.effectiveDate));
