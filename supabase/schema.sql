@@ -103,6 +103,16 @@ create table if not exists report_template (
   uploaded_at timestamptz
 );
 
+-- ---------- 通知設定（単一設定） ----------
+-- 申請がexpense_reportsにINSERTされた際、Supabase Database Webhook経由で
+-- Power Automateフローを呼び出し、Teamsへメンション付き投稿する運用を想定。
+-- フロー側からこのテーブルを参照してメンション先を取得する。
+create table if not exists notification_settings (
+  id smallint primary key default 1 check (id = 1),
+  teams_mention_email text,
+  updated_at timestamptz not null default now()
+);
+
 -- ============================================================
 -- Row Level Security
 -- 認証機能を追加するまでの暫定運用として、anon key での読み書きを
@@ -117,12 +127,13 @@ alter table travel_rules enable row level security;
 alter table expense_reports enable row level security;
 alter table expense_report_legs enable row level security;
 alter table report_template enable row level security;
+alter table notification_settings enable row level security;
 
 do $$
 declare
   t text;
 begin
-  foreach t in array array['employees', 'destinations', 'transport_fares', 'travel_rules', 'expense_reports', 'expense_report_legs', 'report_template']
+  foreach t in array array['employees', 'destinations', 'transport_fares', 'travel_rules', 'expense_reports', 'expense_report_legs', 'report_template', 'notification_settings']
   loop
     execute format('drop policy if exists "%s_select" on %I', t, t);
     execute format('create policy "%s_select" on %I for select using (true)', t, t);

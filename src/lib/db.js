@@ -253,3 +253,19 @@ export async function deleteTemplate() {
   const { error } = await supabase.from("report_template").delete().eq("id", 1);
   if (error) throw error;
 }
+
+/* ---------- 通知設定（単一設定） ---------- */
+function mapNotificationSettings(row) {
+  return { teamsMentionEmail: row ? row.teams_mention_email : "" };
+}
+export async function getNotificationSettings() {
+  const { data, error } = await supabase.from("notification_settings").select("*").eq("id", 1).maybeSingle();
+  if (error) throw error;
+  return mapNotificationSettings(data);
+}
+export async function upsertNotificationSettings({ teamsMentionEmail }) {
+  const { error } = await supabase.from("notification_settings").upsert({
+    id: 1, teams_mention_email: teamsMentionEmail, updated_at: new Date().toISOString(),
+  });
+  if (error) throw error;
+}

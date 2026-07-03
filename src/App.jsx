@@ -97,6 +97,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [duplicateSource, setDuplicateSource] = useState(null);
   const [template, setTemplate] = useState(null);
+  const [notificationSettings, setNotificationSettings] = useState({ teamsMentionEmail: "" });
   const [adminUnlocked, setAdminUnlocked] = useState(() => sessionStorage.getItem("adminUnlocked") === "1");
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
@@ -105,13 +106,14 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [d, t, r, e, rp, tpl] = await Promise.all([
+        const [d, t, r, e, rp, tpl, ns] = await Promise.all([
           db.listDestinations(),
           db.listTransportFares(),
           db.listTravelRules(),
           db.listEmployees(),
           db.listReports(),
           db.getTemplate(),
+          db.getNotificationSettings(),
         ]);
         setDestinations(d.length ? d : await db.insertDestinationsBulk(SEED_DESTINATIONS));
         setTransportHistory(t.length ? t : await db.insertTransportFaresBulk(SEED_TRANSPORT_HISTORY));
@@ -119,6 +121,7 @@ export default function App() {
         setEmployees(e.length ? e : await db.insertEmployeesBulk(SEED_EMPLOYEES));
         setReports(rp);
         setTemplate(tpl);
+        setNotificationSettings(ns);
       } catch (err) {
         console.error(err);
         flash(`データの読み込みに失敗しました：${err.message || err}`);
@@ -193,6 +196,11 @@ export default function App() {
   const changeTemplate = async (next) => {
     if (next) { await db.upsertTemplate(next); setTemplate(next); }
     else { await db.deleteTemplate(); setTemplate(null); }
+  };
+
+  const changeNotificationSettings = async (next) => {
+    await db.upsertNotificationSettings(next);
+    setNotificationSettings(next);
   };
 
   if (loading) {
@@ -313,6 +321,8 @@ export default function App() {
               onTemplateChange={changeTemplate}
               onUpdate={updateReportRow}
               onNavigate={setTab}
+              notificationSettings={notificationSettings}
+              onNotificationSettingsChange={changeNotificationSettings}
             />
           ) : (
             <AdminGate onUnlock={unlockAdmin} />
@@ -2131,7 +2141,49 @@ function AdminGate({ onUnlock }) {
   );
 }
 
-function AdminPanel({ reports, onUpdate, flash, template, onTemplateChange, onNavigate }) {
+/* ================= 通知設定（Teamsメンション先） ================= */
+function NotificationSettingsEditor({ settings, onChange, flash }) {
+  const [email, setEmail] = useState(settings?.teamsMentionEmail || "");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onChange({ teamsMentionEmail: email.trim() });
+      flash("通知設定を保存しました");
+    } catch (err) {
+      flash(`保存に失敗しました：${err.message || err}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section style={{ ...styles.card, marginTop: 16 }}>
+      <h2 style={{ ...styles.cardTitle, marginBottom: 4 }}>通知設定</h2>
+      <p style={styles.notice}>
+        申請が送信された際にTeamsへ自動投稿する仕組み（Supabase Database Webhook →
+        Power Automate → Teams）を設定する場合、ここで指定したメールアドレス（Teamsの
+        ユーザープリンシパル名）宛にメンションされます。Power Automateフロー側の設定は別途必要です。
+      </p>
+      <div style={styles.formRow}>
+        <label style={styles.label}>メンション先メールアドレス</label>
+        <input
+          type="email"
+          style={styles.input}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="例）yasuda@example.com"
+        />
+      </div>
+      <button onClick={save} disabled={saving} style={{ ...styles.primaryBtn, width: "auto", padding: "9px 18px", opacity: saving ? 0.6 : 1 }}>
+        {saving ? "保存中…" : "保存"}
+      </button>
+    </section>
+  );
+}
+
+function AdminPanel({ reports, onUpdate, flash, template, onTemplateChange, onNavigate, notificationSettings, onNotificationSettingsChange }) {
   const [filter, setFilter] = useState("pending");
   const [expandedId, setExpandedId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
@@ -2224,6 +2276,8 @@ function AdminPanel({ reports, onUpdate, flash, template, onTemplateChange, onNa
           <button onClick={() => onNavigate("rules")} style={styles.smallBtn}><History size={13} style={{ marginRight: 4 }} />宿泊費・日当マスタを編集</button>
         </div>
       </section>
+
+      <NotificationSettingsEditor settings={notificationSettings} onChange={onNotificationSettingsChange} flash={flash} />
 
       {/* テンプレート管理UIは非表示（機能自体は保持。再度使う場合はこのコメントを外す） */}
       {/* <TemplateManager template={template} onChange={onTemplateChange} flash={flash} /> */}

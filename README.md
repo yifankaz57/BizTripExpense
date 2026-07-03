@@ -127,3 +127,44 @@ git push -u origin main
 旧バージョン（`kv_store` 形式）から移行する場合は、上記「1. Supabase側の準備」の手順3を
 参照してください。それ以前（Claudeアーティファクト上の `window.storage`）のデータについては、
 保存場所の互換性がないため自動移行の対象外です。
+
+## 7. Teams通知（任意・Microsoft 365側の設定が必要）
+
+申請が送信された際にTeamsへ自動投稿し、指定した相手にメンションする仕組みは、
+**Supabase Database Webhook → Power Automate → Teams** という構成で実現できます。
+アプリ側のコードは変更不要です。管理者ページの「通知設定」でメンション先メールアドレスを
+登録しておく必要があります（`notification_settings` テーブルに保存されます）。
+
+以下はMicrosoft 365側（Power Automate・Teams管理権限が必要）での設定手順です。
+
+### 7-1. Power Automateフローの作成
+1. [Power Automate](https://make.powerautomate.com/) で新規フローを作成し、
+   トリガーに **「HTTP要求の受信時」(When a HTTP request is received)** を選択
+2. 続けて以下のアクションを追加
+   - **HTTP**（GET）: `notification_settings` からメンション先メールアドレスを取得
+     - URI: `https://sgwaszxmsrisixtnqzhh.supabase.co/rest/v1/notification_settings?select=teams_mention_email&id=eq.1`
+     - ヘッダー: `apikey: <SupabaseのanonKey>` / `Authorization: Bearer <SupabaseのanonKey>`
+   - **Office 365ユーザー：ユーザープロファイルの取得(V2)**: 上記で取得したメールアドレスを
+     ユーザー(UPN)に指定し、Teamsメンションに必要なAAD ID（Id列）を取得
+   - **Teams：チャットまたはチャネルでのアダプティブカードの投稿**（または「メッセージの投稿」）:
+     投稿先チーム／チャネルを指定し、本文に取得したAAD IDで `<at>ユーザー名</at>` 形式のメンションと、
+     トリガー本文（`triggerBody()`）から申請者名・金額などを差し込む
+3. 保存後、トリガーの「HTTP要求の受信時」に生成されたURLをコピーする
+
+### 7-2. Supabase Database Webhookの設定
+1. Supabaseダッシュボード → 左メニュー「Database」→「Webhooks」→「Create a new hook」
+2. 以下を設定
+   - Table: `expense_reports`
+   - Events: `Insert` のみチェック
+   - Type: `HTTP Request`
+   - URL: 手順7-1でコピーしたPower AutomateのフローURL
+   - Method: `POST`
+3. 保存すると、以後 `expense_reports` にINSERTされるたびに自動でフローが呼ばれます
+
+### 補足
+- Power Automateの「HTTP要求の受信時」トリガーのスキーマは、Supabase Webhookのペイロード
+  （`{"type":"INSERT","table":"expense_reports","record":{...申請ヘッダの全カラム...},"old_record":null}`）
+  に合わせて生成しておくと、以降のアクションで `record.applicant` のようにフィールドを参照できます
+- 区間明細（出張先・日程など）は `expense_report_legs` テーブルに別途保存されているため、
+  通知本文に含めたい場合はWebhookのペイロードに含まれる `record.id`（申請ID）を使って
+  Supabase REST APIから追加取得してください
