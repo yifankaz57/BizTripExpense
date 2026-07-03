@@ -263,20 +263,32 @@ export default function App() {
           />
         )}
         {tab === "dest" && (
-          <DestMaster destinations={destinations} onAdd={addDestination} flash={flash} />
+          adminUnlocked ? (
+            <DestMaster destinations={destinations} onAdd={addDestination} flash={flash} />
+          ) : (
+            <AdminGate onUnlock={unlockAdmin} />
+          )
         )}
         {tab === "transport" && (
-          <TransportHistoryView
-            destinations={destinations}
-            history={transportHistory}
-            onAdd={addTransportFare}
-            onUpdate={updateTransportFareRow}
-            onDelete={deleteTransportFareRow}
-            flash={flash}
-          />
+          adminUnlocked ? (
+            <TransportHistoryView
+              destinations={destinations}
+              history={transportHistory}
+              onAdd={addTransportFare}
+              onUpdate={updateTransportFareRow}
+              onDelete={deleteTransportFareRow}
+              flash={flash}
+            />
+          ) : (
+            <AdminGate onUnlock={unlockAdmin} />
+          )
         )}
         {tab === "rules" && (
-          <RuleHistoryView history={ruleHistory} onAdd={addTravelRule} onUpdate={updateTravelRuleRow} onDelete={deleteTravelRuleRow} flash={flash} />
+          adminUnlocked ? (
+            <RuleHistoryView history={ruleHistory} onAdd={addTravelRule} onUpdate={updateTravelRuleRow} onDelete={deleteTravelRuleRow} flash={flash} />
+          ) : (
+            <AdminGate onUnlock={unlockAdmin} />
+          )
         )}
         {tab === "reports" && (
           <ReportsList
