@@ -80,12 +80,11 @@ const TABS = [
   { id: "form", label: "精算書作成", icon: Plane },
   { id: "rates", label: "現行レート一覧", icon: ListChecks },
   { id: "employees", label: "社員マスタ", icon: Users },
-  { id: "dest", label: "出張先マスタ", icon: MapPin },
-  { id: "transport", label: "交通費マスタ", icon: History },
-  { id: "rules", label: "宿泊費・日当マスタ", icon: History },
   { id: "reports", label: "自分の申請", icon: ClipboardList },
   { id: "admin", label: "管理者ページ", icon: ShieldCheck },
 ];
+// 出張先/交通費/宿泊費・日当マスタは通常ナビからは非表示。管理者ページの
+// 「マスタ管理」ボタン（onNavigate）経由でのみ遷移する（tab自体はApp内で処理される）。
 
 export default function App() {
   const [tab, setTab] = useState("form");
