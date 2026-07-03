@@ -79,11 +79,10 @@ function currentRule(history, category, asOf) {
 const TABS = [
   { id: "form", label: "精算書作成", icon: Plane },
   { id: "rates", label: "現行レート一覧", icon: ListChecks },
-  { id: "employees", label: "社員マスタ", icon: Users },
   { id: "reports", label: "自分の申請", icon: ClipboardList },
   { id: "admin", label: "管理者ページ", icon: ShieldCheck },
 ];
-// 出張先/交通費/宿泊費・日当マスタは通常ナビからは非表示。管理者ページの
+// 社員/出張先/交通費/宿泊費・日当マスタは通常ナビからは非表示。管理者ページの
 // 「マスタ管理」ボタン（onNavigate）経由でのみ遷移する（tab自体はApp内で処理される）。
 
 export default function App() {
@@ -260,14 +259,18 @@ export default function App() {
           <RatesView destinations={destinations} transportHistory={transportHistory} ruleHistory={ruleHistory} />
         )}
         {tab === "employees" && (
-          <EmployeeMaster
-            employees={employees}
-            onAdd={addEmployee}
-            onAddBulk={addEmployeesBulk}
-            onUpdate={updateEmployeeRow}
-            onDelete={deleteEmployeeRow}
-            flash={flash}
-          />
+          adminUnlocked ? (
+            <EmployeeMaster
+              employees={employees}
+              onAdd={addEmployee}
+              onAddBulk={addEmployeesBulk}
+              onUpdate={updateEmployeeRow}
+              onDelete={deleteEmployeeRow}
+              flash={flash}
+            />
+          ) : (
+            <AdminGate onUnlock={unlockAdmin} />
+          )
         )}
         {tab === "dest" && (
           adminUnlocked ? (
@@ -2271,6 +2274,7 @@ function AdminPanel({ reports, onUpdate, flash, template, onTemplateChange, onNa
       <section style={{ ...styles.card, marginTop: 16 }}>
         <h2 style={{ ...styles.cardTitle, marginBottom: 10 }}>マスタ管理</h2>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => onNavigate("employees")} style={styles.smallBtn}><Users size={13} style={{ marginRight: 4 }} />社員マスタを編集</button>
           <button onClick={() => onNavigate("dest")} style={styles.smallBtn}><MapPin size={13} style={{ marginRight: 4 }} />出張先マスタを編集</button>
           <button onClick={() => onNavigate("transport")} style={styles.smallBtn}><History size={13} style={{ marginRight: 4 }} />交通費マスタを編集</button>
           <button onClick={() => onNavigate("rules")} style={styles.smallBtn}><History size={13} style={{ marginRight: 4 }} />宿泊費・日当マスタを編集</button>
