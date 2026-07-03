@@ -98,14 +98,20 @@ git push -u origin main
 | `VITE_SUPABASE_URL` | `https://sgwaszxmsrisixtnqzhh.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | 手順1でメモした anon key |
 
-### 4-2. Pagesの有効化
-`Settings` → `Pages` → `Build and deployment` の `Source` を **「GitHub Actions」** に設定します。
-
-### 4-3. デプロイ
+### 4-2. デプロイ（1回目：gh-pagesブランチの作成）
 `main` ブランチにpushすると `.github/workflows/deploy.yml` が自動実行され、
-数分後に `https://<ユーザー名>.github.io/<リポジトリ名>/` で公開されます。
+ビルド成果物が `gh-pages` ブランチに自動作成・pushされます
+（`peaceiris/actions-gh-pages` を使用。以前の `actions/deploy-pages`
+方式は、Pages Deployments APIのステータス確認が不安定に失敗することが
+あったため、より安定した「ブランチへのデプロイ」方式に変更しています）。
 （既にpush済みの場合は、`Actions` タブから "Deploy to GitHub Pages" を
 `Run workflow` で手動実行しても構いません）
+
+### 4-3. Pagesの有効化（2回目：gh-pagesブランチができてから）
+`gh-pages` ブランチが作成されたのを確認したら、`Settings` → `Pages` →
+`Build and deployment` の `Source` を **「Deploy from a branch」**、
+ブランチを **「gh-pages」／「/ (root)」** に設定して保存します。
+数分後に `https://<ユーザー名>.github.io/<リポジトリ名>/` で公開されます。
 
 ---
 
