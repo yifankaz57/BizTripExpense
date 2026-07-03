@@ -98,8 +98,10 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [duplicateSource, setDuplicateSource] = useState(null);
   const [template, setTemplate] = useState(null);
+  const [adminUnlocked, setAdminUnlocked] = useState(() => sessionStorage.getItem("adminUnlocked") === "1");
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
+  const unlockAdmin = () => { sessionStorage.setItem("adminUnlocked", "1"); setAdminUnlocked(true); };
 
   useEffect(() => {
     (async () => {
@@ -292,13 +294,18 @@ export default function App() {
           />
         )}
         {tab === "admin" && (
-          <AdminPanel
-            reports={reports}
-            flash={flash}
-            template={template}
-            onTemplateChange={changeTemplate}
-            onUpdate={updateReportRow}
-          />
+          adminUnlocked ? (
+            <AdminPanel
+              reports={reports}
+              flash={flash}
+              template={template}
+              onTemplateChange={changeTemplate}
+              onUpdate={updateReportRow}
+              onNavigate={setTab}
+            />
+          ) : (
+            <AdminGate onUnlock={unlockAdmin} />
+          )
         )}
       </main>
 
@@ -2078,7 +2085,42 @@ function TemplateManager({ template, onChange, flash }) {
   );
 }
 
-function AdminPanel({ reports, onUpdate, flash, template, onTemplateChange }) {
+/* ================= 管理者ページ：簡易パスワードゲート ================= */
+const ADMIN_PASSWORD = "0507";
+
+function AdminGate({ onUnlock }) {
+  const [input, setInput] = useState("");
+  const [error, setError] = useState(false);
+
+  const submit = () => {
+    if (input === ADMIN_PASSWORD) {
+      onUnlock();
+    } else {
+      setError(true);
+    }
+  };
+
+  return (
+    <section style={{ ...styles.card, maxWidth: 360, margin: "40px auto" }}>
+      <h2 style={styles.cardTitle}>管理者ページ（要パスワード）</h2>
+      <div style={styles.formRow}>
+        <label style={styles.label}>パスワード</label>
+        <input
+          type="password"
+          style={styles.input}
+          value={input}
+          onChange={(e) => { setInput(e.target.value); setError(false); }}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          autoFocus
+        />
+        {error && <div style={{ ...styles.warn, marginTop: 6 }}><AlertCircle size={13} style={{ marginRight: 4 }} />パスワードが違います</div>}
+      </div>
+      <button onClick={submit} style={{ ...styles.primaryBtn, marginTop: 6 }}>入室する</button>
+    </section>
+  );
+}
+
+function AdminPanel({ reports, onUpdate, flash, template, onTemplateChange, onNavigate }) {
   const [filter, setFilter] = useState("pending");
   const [expandedId, setExpandedId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
@@ -2161,6 +2203,15 @@ function AdminPanel({ reports, onUpdate, flash, template, onTemplateChange }) {
             <p style={styles.hint}>アップロード済みのテンプレート（{template.name}）の書式のまま、対象申請ごとに本物のxlsxを作成し、1つのZIPにまとめます。</p>
           </div>
         )}
+      </section>
+
+      <section style={{ ...styles.card, marginTop: 16 }}>
+        <h2 style={{ ...styles.cardTitle, marginBottom: 10 }}>マスタ管理</h2>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => onNavigate("dest")} style={styles.smallBtn}><MapPin size={13} style={{ marginRight: 4 }} />出張先マスタを編集</button>
+          <button onClick={() => onNavigate("transport")} style={styles.smallBtn}><History size={13} style={{ marginRight: 4 }} />交通費マスタを編集</button>
+          <button onClick={() => onNavigate("rules")} style={styles.smallBtn}><History size={13} style={{ marginRight: 4 }} />宿泊費・日当マスタを編集</button>
+        </div>
       </section>
 
       {/* テンプレート管理UIは非表示（機能自体は保持。再度使う場合はこのコメントを外す） */}
