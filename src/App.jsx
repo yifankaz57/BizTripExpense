@@ -2163,7 +2163,8 @@ function AdminPanel({ reports, onUpdate, flash, template, onTemplateChange }) {
         )}
       </section>
 
-      <TemplateManager template={template} onChange={onTemplateChange} flash={flash} />
+      {/* テンプレート管理UIは非表示（機能自体は保持。再度使う場合はこのコメントを外す） */}
+      {/* <TemplateManager template={template} onChange={onTemplateChange} flash={flash} /> */}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
         {filtered.length === 0 && (
