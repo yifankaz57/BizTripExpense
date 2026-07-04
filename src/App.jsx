@@ -390,10 +390,11 @@ function ReportForm({ destinations, transportHistory, ruleHistory, employees, du
       const transport = tr ? (tr.mainFare || 0) + (tr.subFare || 0) : 0;
       const lodgingUnit = rule ? rule.lodging : 0;
       const perDiemUnit = rule ? rule.perDiem : 0;
-      const lodging = lodgingUnit * nights;
+      const lodgingNights = Math.max(nights - 1, 0); // 宿泊費は滞在日数-1泊分
+      const lodging = lodgingUnit * lodgingNights;
       const perDiem = perDiemUnit * nights;
       return {
-        ...leg, dest, nights, transport, lodgingUnit, perDiemUnit, lodging, perDiem,
+        ...leg, dest, nights, lodgingNights, transport, lodgingUnit, perDiemUnit, lodging, perDiem,
         subtotal: transport + lodging + perDiem,
         missingRate: !tr || !rule,
       };
@@ -444,7 +445,7 @@ function ReportForm({ destinations, transportHistory, ruleHistory, employees, du
     const report = buildReport();
     const wb = XLSX.utils.book_new();
     const aoa = [
-      ["出張旅費清算書", null, null, null, null, null, null, `作成日: ${wareki(report.applyDate)}`],
+      ["出張旅費精算書", null, null, null, null, null, null, `作成日: ${wareki(report.applyDate)}`],
       [],
       ["氏名", report.applicant, "職責", report.role, "仮払額", report.advance, "円", null],
       [],
@@ -458,8 +459,8 @@ function ReportForm({ destinations, transportHistory, ruleHistory, employees, du
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
     ws["!cols"] = [{ wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 20 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, ws, "出張旅費清算書");
-    XLSX.writeFile(wb, `出張旅費清算書_${report.applicant || "無記名"}_${report.applyDate}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "出張旅費精算書");
+    XLSX.writeFile(wb, `出張旅費精算書_${report.applicant || "無記名"}_${report.applyDate}.xlsx`);
   };
 
   return (
@@ -482,7 +483,7 @@ function ReportForm({ destinations, transportHistory, ruleHistory, employees, du
           <label style={styles.label}>職責（氏名選択で自動反映）</label>
           <div style={styles.readonlyField}>{role || "—"}</div>
         </div>
-        <div style={styles.formRow2}>
+        <div className="stack-on-mobile" style={styles.formRow2}>
           <div>
             <label style={styles.label}>申請日</label>
             <input type="date" style={styles.input} value={applyDate} onChange={(e) => setApplyDate(e.target.value)} />
@@ -524,7 +525,7 @@ function ReportForm({ destinations, transportHistory, ruleHistory, employees, du
                   </optgroup>
                 </select>
               </div>
-              <div style={styles.formRow2}>
+              <div className="stack-on-mobile" style={styles.formRow2}>
                 <div>
                   <label style={styles.label}>出発日</label>
                   <input
@@ -553,7 +554,7 @@ function ReportForm({ destinations, transportHistory, ruleHistory, employees, du
                 <div style={styles.legSummary}>
                   <SummaryItem label="日数" value={`${c.nights} 日`} />
                   <SummaryItem label="交通費" value={`¥${yen(c.transport)}`} />
-                  <SummaryItem label="宿泊費" value={`¥${yen(c.lodging)}`} sub={`単価¥${yen(c.lodgingUnit)}×${c.nights}`} />
+                  <SummaryItem label="宿泊費" value={`¥${yen(c.lodging)}`} sub={`単価¥${yen(c.lodgingUnit)}×${c.lodgingNights}泊`} />
                   <SummaryItem label="日当" value={`¥${yen(c.perDiem)}`} sub={`単価¥${yen(c.perDiemUnit)}×${c.nights}`} />
                   <SummaryItem label="小計" value={`¥${yen(c.subtotal)}`} strong />
                   {c.missingRate && (
@@ -569,15 +570,15 @@ function ReportForm({ destinations, transportHistory, ruleHistory, employees, du
       </section>
 
       <section style={{ ...styles.card, position: "sticky", top: 84, alignSelf: "start" }}>
-        <h2 style={styles.cardTitle}>清算プレビュー</h2>
-        <div style={styles.previewRow}><span>交通費 合計</span><b>¥{yen(totals.transport)}</b></div>
-        <div style={styles.previewRow}><span>宿泊費 合計</span><b>¥{yen(totals.lodging)}</b></div>
-        <div style={styles.previewRow}><span>日当 合計</span><b>¥{yen(totals.perDiem)}</b></div>
-        <div style={{ ...styles.previewRow, borderTop: "1px solid #E2E5EA", paddingTop: 10, marginTop: 6 }}>
-          <span>清算額</span><b style={{ fontSize: 20, color: "#1B4B6B" }}>¥{yen(totals.grand)}</b>
+        <h2 style={styles.cardTitle}>精算プレビュー</h2>
+        <div className="preview-row-wrap" style={styles.previewRow}><span>交通費 合計</span><b>¥{yen(totals.transport)}</b></div>
+        <div className="preview-row-wrap" style={styles.previewRow}><span>宿泊費 合計</span><b>¥{yen(totals.lodging)}</b></div>
+        <div className="preview-row-wrap" style={styles.previewRow}><span>日当 合計</span><b>¥{yen(totals.perDiem)}</b></div>
+        <div className="preview-row-wrap" style={{ ...styles.previewRow, borderTop: "1px solid #E2E5EA", paddingTop: 10, marginTop: 6 }}>
+          <span>精算額</span><b style={{ fontSize: 20, color: "#1B4B6B" }}>¥{yen(totals.grand)}</b>
         </div>
-        <div style={styles.previewRow}><span>仮払額</span><b>¥{yen(advance)}</b></div>
-        <div style={styles.previewRow}>
+        <div className="preview-row-wrap" style={styles.previewRow}><span>仮払額</span><b>¥{yen(advance)}</b></div>
+        <div className="preview-row-wrap" style={styles.previewRow}>
           <span>過不足額</span>
           <b style={{ color: balance === 0 ? "#2F6B4F" : balance > 0 ? "#B4472B" : "#1B4B6B" }}>
             {balance > 0 ? `不足 ¥${yen(balance)}` : balance < 0 ? `過払 ¥${yen(-balance)}` : "¥0"}
@@ -608,7 +609,7 @@ function ReportForm({ destinations, transportHistory, ruleHistory, employees, du
             <p style={styles.modalBody}>
               {autoApproveNotice.applicant} 様（{autoApproveNotice.role}）の申請は、承認操作を経ずに自動で承認済みとして登録されます。
             </p>
-            <div style={styles.modalTotal}>清算額　¥{yen(autoApproveNotice.totals.grand)}</div>
+            <div style={styles.modalTotal}>精算額　¥{yen(autoApproveNotice.totals.grand)}</div>
             <button onClick={confirmAutoApprove} style={{ ...styles.primaryBtn, marginTop: 18 }}>OK（承認して申請を送信）</button>
           </div>
         </div>
@@ -1370,7 +1371,7 @@ function buildBorderedSheetXml(report) {
   let r = 1;
 
   rowsXml.push(borderedRowXml(r, [
-    { col: "A", value: "出張旅費清算書", isString: true, style: XS.title, span: 7 },
+    { col: "A", value: "出張旅費精算書", isString: true, style: XS.title, span: 7 },
     { col: "H", value: `作成日: ${wareki(report.applyDate)}`, isString: true, style: XS.plain, span: 3 },
   ], merges)); r++;
 
@@ -1797,13 +1798,13 @@ async function fillSimpleTemplateXlsx(templateBuf, report) {
 }
 
 /* ============================================================
-   ZZ-2形式テンプレート（「出張申請書」＋「出張旅費清算書」の2シート構成）への差し込み
+   ZZ-2形式テンプレート（「出張申請書」＋「出張旅費精算書」の2シート構成）への差し込み
    合計・過不足額などはテンプレート側のExcel数式（SUM等）をそのまま残し、
    入力セルにだけ値を書き込むことで、書式・数式を一切崩さずに反映します。
    ============================================================ */
 const ZZ2_APP_SHEET = "出張申請書";
-const ZZ2_SETTLE_SHEET = "出張旅費清算書";
-const ZZ2_MAX_LEGS = 2; // 「出張旅費清算書」側は1区間につき出発・帰着の2ブロックを使うため最大2区間まで対応
+const ZZ2_SETTLE_SHEET = "出張旅費精算書";
+const ZZ2_MAX_LEGS = 2; // 「出張旅費精算書」側は1区間につき出発・帰着の2ブロックを使うため最大2区間まで対応
 
 function dateToExcelSerial(isoDate) {
   if (!isoDate) return "";
@@ -1868,7 +1869,7 @@ async function fillZZ2TemplateXlsx(templateBuf, report) {
   const sheetMap = await getSheetPathMap(files);
   const appPath = sheetMap[ZZ2_APP_SHEET];
   const settlePath = sheetMap[ZZ2_SETTLE_SHEET];
-  if (!appPath || !settlePath) throw new Error("テンプレートに「出張申請書」「出張旅費清算書」の両シートが見つかりませんでした");
+  if (!appPath || !settlePath) throw new Error("テンプレートに「出張申請書」「出張旅費精算書」の両シートが見つかりませんでした");
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -1920,13 +1921,13 @@ async function fillZZ2TemplateXlsx(templateBuf, report) {
     files[appPath] = encoder.encode(new XMLSerializer().serializeToString(doc));
   }
 
-  /* ---- 出張旅費清算書 ---- */
+  /* ---- 出張旅費精算書 ---- */
   {
     const xmlStr = decoder.decode(files[settlePath]);
     const doc = new DOMParser().parseFromString(xmlStr, "application/xml");
-    if (doc.getElementsByTagName("parsererror").length) throw new Error("「出張旅費清算書」シートのXMLを解析できませんでした");
+    if (doc.getElementsByTagName("parsererror").length) throw new Error("「出張旅費精算書」シートのXMLを解析できませんでした");
     const sheetData = doc.getElementsByTagName("sheetData")[0];
-    if (!sheetData) throw new Error("「出張旅費清算書」シートのsheetDataが見つかりませんでした");
+    if (!sheetData) throw new Error("「出張旅費精算書」シートのsheetDataが見つかりませんでした");
 
     const r2 = findRow(sheetData, 2);
     setNum(findCell(r2, "S"), report.applyDate ? new Date(report.applyDate).getFullYear() : "");
@@ -1980,7 +1981,7 @@ async function fillZZ2TemplateXlsx(templateBuf, report) {
     files[settlePath] = encoder.encode(new XMLSerializer().serializeToString(doc));
   }
 
-  // 数式セル（合計・清算額・過不足額など）を書き換えずに残しているため、
+  // 数式セル（合計・精算額・過不足額など）を書き換えずに残しているため、
   // Excelで開いた瞬間に必ず再計算されるようワークブック設定にフラグを立てる
   if (files["xl/workbook.xml"]) {
     let wbXml = decoder.decode(files["xl/workbook.xml"]);
@@ -2010,7 +2011,7 @@ async function fillTemplateAuto(templateBuf, report) {
     const bytes = await fillSimpleTemplateXlsx(templateBuf, report);
     return { bytes, omitted: 0, kind };
   }
-  throw new Error("対応していないテンプレート形式です（「出張旅費清算書」単体、または「出張申請書」＋「出張旅費清算書」の2シート構成に対応）");
+  throw new Error("対応していないテンプレート形式です（「出張旅費精算書」単体、または「出張申請書」＋「出張旅費精算書」の2シート構成に対応）");
 }
 
 async function exportFromTemplate(report, template, flash) {
@@ -2067,7 +2068,7 @@ function TemplateManager({ template, onChange, flash }) {
       };
       const { kind } = await fillTemplateAuto(buf, testReport);
       onChange({ name: file.name, base64: bufToBase64(buf), uploadedAt: new Date().toISOString(), kind });
-      flash(kind === "zz2" ? "テンプレートを登録しました（出張申請書＋出張旅費清算書の2シート構成）" : "テンプレートを登録しました");
+      flash(kind === "zz2" ? "テンプレートを登録しました（出張申請書＋出張旅費精算書の2シート構成）" : "テンプレートを登録しました");
     } catch (err) {
       console.error(err);
       flash(`このファイルはテンプレートとして使用できません：${err.message || err}`);
@@ -2081,14 +2082,14 @@ function TemplateManager({ template, onChange, flash }) {
       <h2 style={styles.cardTitle}>テンプレート管理（書式を保ったままxlsx出力）</h2>
       <p style={styles.notice}>
         次の2種類のテンプレートに対応しています：①このアプリの「Excelでダウンロード」で出力した精算書をExcelで装飾したもの（1シート構成）、
-        ②「出張申請書」「出張旅費清算書」の2シートで構成された社内様式（行の構成は変更しないでください）。
+        ②「出張申請書」「出張旅費精算書」の2シートで構成された社内様式（行の構成は変更しないでください）。
         いずれも<b>.xlsx形式</b>でアップロードしてください（.xlsは非対応。Excelで「名前を付けて保存」からxlsx形式に変換してください）。
       </p>
       {template ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
           <div style={styles.notice}>
             現在のテンプレート：<b style={{ color: "#22262B" }}>{template.name}</b>
-            {template.kind === "zz2" && <span> （出張申請書＋出張旅費清算書）</span>}
+            {template.kind === "zz2" && <span> （出張申請書＋出張旅費精算書）</span>}
             　（登録：{new Date(template.uploadedAt).toLocaleString("ja-JP")}）
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -2440,6 +2441,11 @@ function GlobalStyle() {
       table tbody tr:hover { background: #F7F9FB; }
       @media (max-width: 860px) {
         div[style*="grid-template-columns: 1.5fr 1fr"] { grid-template-columns: 1fr !important; }
+      }
+      @media (max-width: 480px) {
+        .stack-on-mobile { grid-template-columns: 1fr !important; }
+        .preview-row-wrap { flex-wrap: wrap; }
+        .preview-row-wrap b { width: 100%; text-align: right; }
       }
       @keyframes dateBlink {
         0%, 100% { border-color: #E53935; box-shadow: 0 0 0 2px rgba(229,57,53,0.25); }
